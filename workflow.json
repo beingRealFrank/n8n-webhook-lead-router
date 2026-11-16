@@ -1,0 +1,178 @@
+{
+  "name": "Lead router (webhook)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "lead",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "id": "n1",
+      "name": "Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [
+        0,
+        0
+      ],
+      "webhookId": "lead-router-demo"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Body of the \"Validate + normalise\" Code node (runs once per item in n8n).\n// Kept in its own file so it can be unit-tested with plain node.\nfunction normalise(body) {\n  const email = String(body.email || '').trim().toLowerCase();\n  const name = String(body.name || '').trim().replace(/\\s+/g, ' ');\n  const phoneDigits = String(body.phone || '').replace(/\\D/g, '');\n  const phone = phoneDigits.length === 10 ? phoneDigits : (phoneDigits.length === 11 && phoneDigits[0] === '1' ? phoneDigits.slice(1) : '');\n  const source = String(body.source || 'unknown').trim().toLowerCase();\n  const valid = /^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$/.test(email) && name.length > 0;\n  return { valid, lead: { name, email, phone, source } };\n}\nconst b = $input.first().json.body || $input.first().json;\nreturn [{ json: normalise(b) }];"
+      },
+      "id": "n2",
+      "name": "Validate + normalise",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        220,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "c1",
+              "leftValue": "={{ $json.valid }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        }
+      },
+      "id": "n3",
+      "name": "Valid?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        440,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.TARGET_URL || 'http://localhost:9/none' }}",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify($json.lead) }}",
+        "options": {
+          "timeout": 5000
+        }
+      },
+      "id": "n4",
+      "name": "Forward to target",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        660,
+        -80
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: true, routed: $('Validate + normalise').item.json.lead }) }}",
+        "options": {
+          "responseCode": 200
+        }
+      },
+      "id": "n5",
+      "name": "Respond 200",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        880,
+        -80
+      ]
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ JSON.stringify({ ok: false, error: 'invalid lead: name and a valid email are required' }) }}",
+        "options": {
+          "responseCode": 400
+        }
+      },
+      "id": "n6",
+      "name": "Respond 400",
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        660,
+        120
+      ]
+    }
+  ],
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Validate + normalise",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Validate + normalise": {
+      "main": [
+        [
+          {
+            "node": "Valid?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Valid?": {
+      "main": [
+        [
+          {
+            "node": "Forward to target",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Respond 400",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Forward to target": {
+      "main": [
+        [
+          {
+            "node": "Respond 200",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "settings": {
+    "executionOrder": "v1"
+  }
+}
